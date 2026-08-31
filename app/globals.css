@@ -1,0 +1,225 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #020617;
+  color: #e2e8f0;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background-color: #020617;
+  background-image:
+    radial-gradient(circle at top left, rgba(99, 102, 241, 0.24), transparent 28%),
+    radial-gradient(circle at top right, rgba(6, 182, 212, 0.18), transparent 25%),
+    linear-gradient(135deg, #020617 0%, #071126 45%, #0b1228 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), transparent 85%);
+}
+
+::selection {
+  background: rgba(99, 102, 241, 0.35);
+  color: #fff;
+}
+
+button, input, textarea, select {
+  font: inherit;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 10px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+
+body.theme-light {
+  color-scheme: light;
+  background-color: #f8fafc;
+  background-image: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
+  color: #111827;
+}
+
+body.theme-dark {
+  color-scheme: dark;
+  background-color: #0a0a0a;
+  background-image: linear-gradient(135deg, #050505 0%, #171717 100%);
+  color: #e5e5e5;
+}
+
+body.theme-dark::before {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+}
+
+body.theme-dark .bg-slate-950,
+body.theme-dark .bg-slate-950\/60,
+body.theme-dark .bg-slate-950\/70,
+body.theme-dark .bg-slate-950\/80 {
+  background-color: #0a0a0a;
+}
+
+body.theme-dark .bg-slate-900,
+body.theme-dark .bg-slate-900\/60,
+body.theme-dark .bg-slate-900\/80 {
+  background-color: #171717;
+}
+
+body.theme-dark .bg-brand-500\/5,
+body.theme-dark .bg-brand-500\/10 {
+  background-color: #262626;
+}
+
+body.theme-dark .text-brand-200,
+body.theme-dark .text-brand-300,
+body.theme-dark .text-brand-400 {
+  color: #d4d4d4;
+}
+
+body.theme-dark .bg-brand-600,
+body.theme-dark .bg-cyan-600 {
+  background-color: #404040;
+}
+
+body.theme-dark .border-brand-500\/20,
+body.theme-dark .border-brand-500\/30 {
+  border-color: #525252;
+}
+
+body.theme-dark .text-rose-300,
+body.theme-dark .text-rose-400 {
+  color: #fca5a5;
+}
+
+body.theme-dark .text-amber-300,
+body.theme-dark .text-amber-400 {
+  color: #fcd34d;
+}
+
+body.theme-dark .text-emerald-300,
+body.theme-dark .text-emerald-400 {
+  color: #6ee7b7;
+}
+
+body.theme-dark .text-sky-300,
+body.theme-dark .text-sky-400,
+body.theme-dark .text-cyan-300,
+body.theme-dark .text-cyan-400 {
+  color: #7dd3fc;
+}
+
+body.theme-light::before {
+  background-image: linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+}
+
+body.theme-light .bg-slate-950,
+body.theme-light .bg-slate-950\/60,
+body.theme-light .bg-slate-950\/70,
+body.theme-light .bg-slate-950\/80 {
+  background-color: #ffffff;
+}
+
+body.theme-light .bg-slate-900,
+body.theme-light .bg-slate-900\/60,
+body.theme-light .bg-slate-900\/80 {
+  background-color: #f1f5f9;
+}
+
+body.theme-light .text-white {
+  color: #111827;
+}
+
+body.theme-light .text-slate-100,
+body.theme-light .text-slate-200,
+body.theme-light .text-slate-300 {
+  color: #334155;
+}
+
+body.theme-light .text-slate-400,
+body.theme-light .text-slate-500 {
+  color: #64748b;
+}
+
+body.theme-light .border-white\/10 {
+  border-color: #cbd5e1;
+}
+
+body.theme-light .bg-white\/10 {
+  background-color: #e2e8f0;
+}
+
+body.theme-light .bg-brand-600,
+body.theme-light .bg-cyan-600 {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+body.theme-light .hover\:bg-brand-500:hover,
+body.theme-light .hover\:bg-cyan-500:hover {
+  background-color: #262626;
+  color: #ffffff;
+}
+
+body.theme-light .text-rose-300,
+body.theme-light .text-rose-400 {
+  color: #b91c1c;
+}
+
+body.theme-light .text-amber-300,
+body.theme-light .text-amber-400 {
+  color: #a16207;
+}
+
+body.theme-light .text-emerald-300,
+body.theme-light .text-emerald-400 {
+  color: #047857;
+}
+
+body.theme-light .text-sky-300,
+body.theme-light .text-sky-400,
+body.theme-light .text-cyan-300,
+body.theme-light .text-cyan-400 {
+  color: #0369a1;
+}
+
+body.theme-light input,
+body.theme-light textarea,
+body.theme-light select {
+  color: #111827;
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+body.theme-light select option {
+  color: #111827;
+  background-color: #ffffff;
+}
