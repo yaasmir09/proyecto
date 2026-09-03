@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import Header from '@/components/Header'
 import Sidebar from '@/components/Sidebar'
 import { MobileNavigation } from '@/components/Sidebar'
+import { ACTION_KEYS, canAccessView, canUseAction, DEFAULT_ACTIONS, DEFAULT_PERMISSIONS, VIEW_KEYS, type ActionKey, type ActionMatrix, type PermissionMatrix, type RoleKey, type ViewKey } from '@/lib/permissions'
 
 type DashboardStats = {
   clientes: number
@@ -93,7 +94,6 @@ type UsuarioRow = {
   rol: string
 }
 
-type ViewKey = 'Dashboard' | 'Cobranza' | 'Facturas' | 'Clientes' | 'Pagos' | 'Reportes' | 'Configuración'
 type ReportType = 'general' | 'clientes' | 'vencidas' | 'pagos' | 'riesgo'
 
 type GenericRow = Record<string, unknown>
@@ -151,7 +151,7 @@ function normalizeSearchText(value: string) {
 
 function formatContractRules(value: string) {
   const lines = value
-    .split(/\n+/)
+    .split(/\n+|(?=\d+\.\s+)/)
     .map((line) => line.trim())
     .filter(Boolean)
 
@@ -266,6 +266,11 @@ function getRoleLabel(role: string) {
   return ROLE_OPTIONS.find((option) => option.value === role)?.label || role
 }
 
+function normalizeRole(role: unknown): RoleKey {
+  const normalized = String(role || '').toLowerCase()
+  return ROLE_OPTIONS.some((option) => option.value === normalized) ? normalized as RoleKey : 'operador'
+}
+
 function formatReportRows(rows: Array<Record<string, unknown>>) {
   return rows.map((row) => Object.entries(row).map(([key, value]) => `${key}: ${value}`).join(' | '))
 }
@@ -277,6 +282,8 @@ const REPORT_TITLES: Record<ReportType, string> = {
   pagos: 'Pagos por mes',
   riesgo: 'Riesgo de cartera',
 }
+
+const PERMISSIONS_STORAGE_KEY = 'smartcollect-permissions-v2'
 
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false)
@@ -294,6 +301,8 @@ export default function Home() {
   const [activeView, setActiveView] = useState<ViewKey>('Dashboard')
   const [selectedReportType, setSelectedReportType] = useState<ReportType>('general')
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [permissions, setPermissions] = useState<PermissionMatrix>(DEFAULT_PERMISSIONS)
+  const [actions, setActions] = useState<ActionMatrix>(DEFAULT_ACTIONS)
   const [themeMode, setThemeMode] = useState<ThemeMode>('light')
   const [contracts, setContracts] = useState<Array<{ id: number; numero_contrato: string; cliente_id: number; cliente: string; identificacion: string; telefono: string }>>([])
   const [contractSearch, setContractSearch] = useState('')
@@ -334,13 +343,28 @@ export default function Home() {
     }
     if (storedUser) {
       try {
-        setAuthUser(JSON.parse(storedUser))
+        const user = JSON.parse(storedUser)
+        setAuthUser({ ...user, role: normalizeRole(user.role || user.rol) })
       } catch {
         setAuthUser(null)
       }
     }
+    const storedPermissions = localStorage.getItem(PERMISSIONS_STORAGE_KEY)
+    if (storedPermissions) {
+      try {
+        const storedData = JSON.parse(storedPermissions)
+        setPermissions(Object.fromEntries(Object.entries(DEFAULT_PERMISSIONS).map(([role, defaults]) => [role, { ...defaults, ...(storedData.views?.[role] || storedData[role] || {}) }])) as PermissionMatrix)
+        setActions(Object.fromEntries(Object.entries(DEFAULT_ACTIONS).map(([role, defaults]) => [role, { ...defaults, ...(storedData.actions?.[role] || {}) }])) as ActionMatrix)
+      } catch {
+        setPermissions(DEFAULT_PERMISSIONS)
+      }
+    }
     void loadData()
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem(PERMISSIONS_STORAGE_KEY, JSON.stringify({ views: permissions, actions }))
+  }, [permissions, actions])
 
   useEffect(() => {
     document.body.classList.toggle('theme-light', themeMode === 'light')
@@ -355,6 +379,13 @@ export default function Home() {
       setSelectedBackup('')
     }
   }, [backups])
+
+  useEffect(() => {
+    if (authUser && !canAccessView(permissions, authUser.role, activeView)) {
+      const fallbackView = VIEW_KEYS.find((view) => canAccessView(permissions, authUser.role, view)) || 'Dashboard'
+      setActiveView(fallbackView)
+    }
+  }, [activeView, authUser, permissions])
 
   function resetClientForm() {
     setClientForm({ nombre: '', email: '', telefono: '', identificacion: '', empresa: '', estado: 'activo' })
@@ -448,6 +479,7 @@ export default function Home() {
 
   async function handleUpdateLoan(e: FormEvent) {
     e.preventDefault()
+    if (!can('prestamos.gestionar')) return
 
     if (!editingLoanId || !selectedLoan) {
       setMessage('Error: Préstamo no seleccionado')
@@ -676,7 +708,7 @@ export default function Home() {
     e.preventDefault()
 
     if (authForm.email === 'admin@smartcollect.com' && authForm.password === '123456') {
-      const user = { email: authForm.email, role: 'admin' }
+      const user = { email: authForm.email, role: 'admin' as RoleKey }
       sessionStorage.setItem('smartcollect-auth', 'true')
       sessionStorage.setItem('smartcollect-auth-user', JSON.stringify(user))
       setLoggedIn(true)
@@ -694,7 +726,7 @@ export default function Home() {
       const data = await res.json()
 
       if (data?.ok && data?.user) {
-        const user = { email: data.user.email, role: data.user.rol || 'operador' }
+        const user = { email: data.user.email, role: normalizeRole(data.user.rol) }
         sessionStorage.setItem('smartcollect-auth', 'true')
         sessionStorage.setItem('smartcollect-auth-user', JSON.stringify(user))
         setLoggedIn(true)
@@ -718,6 +750,7 @@ export default function Home() {
 
   async function handleCreateClient(e: FormEvent) {
     e.preventDefault()
+    if (!can('clientes.gestionar')) return
     const method = editingClientId ? 'PATCH' : 'POST'
     const url = editingClientId ? `/api/clientes/${editingClientId}` : '/api/clientes'
     const payload = {
@@ -764,6 +797,7 @@ export default function Home() {
 
   async function handleCreateInvoice(e: FormEvent) {
     e.preventDefault()
+    if (!can('facturas.gestionar')) return
     const method = editingInvoiceId ? 'PATCH' : 'POST'
     const url = editingInvoiceId ? `/api/facturas/${editingInvoiceId}` : '/api/facturas'
     const payload = {
@@ -799,6 +833,7 @@ export default function Home() {
 
   async function handleCreatePago(e: FormEvent) {
     e.preventDefault()
+    if (!can('pagos.gestionar')) return
     const method = editingPagoId ? 'PATCH' : 'POST'
     const url = editingPagoId ? `/api/pagos/${editingPagoId}` : '/api/pagos'
     const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pagoForm) })
@@ -835,6 +870,7 @@ export default function Home() {
 
   async function handleCreateSeguimiento(e: FormEvent) {
     e.preventDefault()
+    if (!can('seguimientos.gestionar')) return
     const res = await fetch('/api/seguimientos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(seguimientoForm) })
     const data = await res.json()
     if (data.ok) {
@@ -848,6 +884,7 @@ export default function Home() {
 
   async function handleCreateUsuario(e: FormEvent) {
     e.preventDefault()
+    if (!can('usuarios.gestionar')) return
     const method = editingUsuarioId ? 'PATCH' : 'POST'
     const url = editingUsuarioId ? `/api/usuarios/${editingUsuarioId}` : '/api/usuarios'
     const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(usuarioForm) })
@@ -863,6 +900,7 @@ export default function Home() {
 
   async function handleCreateContract(e: FormEvent) {
     e.preventDefault()
+    if (!can('prestamos.gestionar')) return
 
     const payload = {
       cliente_id: Number(contractForm.cliente_id),
@@ -907,24 +945,9 @@ export default function Home() {
         body: JSON.stringify(payload),
       })
 
-      const contentType = res.headers.get('content-type') || ''
-      if (contentType.includes('application/pdf')) {
-        const blob = await res.blob()
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = res.headers.get('X-Contrato-Archivo') || `contrato-${Date.now()}.pdf`
-        link.click()
-        URL.revokeObjectURL(url)
-        setMessage(`Factura y contrato guardados: ${link.download}`)
-        resetContractForm()
-        await loadData()
-        return
-      }
-
       const data = await res.json()
-      if (data.ok) {
-        setMessage('Factura y contrato creados correctamente')
+      if (res.ok && data.ok) {
+        setMessage(`Factura y contrato guardados: ${data.archivo}`)
         resetContractForm()
         await loadData()
       } else {
@@ -949,6 +972,7 @@ export default function Home() {
   }
 
   async function handleBackup() {
+    if (!can('backups.gestionar')) return
     const res = await fetch('/api/db/backup', { method: 'POST' })
     const data = await res.json()
     if (data.ok) {
@@ -961,6 +985,7 @@ export default function Home() {
   }
 
   async function handleCreateReport() {
+    if (!can('reportes.exportar')) return
     const report = {
       id: Date.now(),
       title: `Reporte ${new Date().toLocaleDateString('es-ES')}`,
@@ -994,6 +1019,7 @@ export default function Home() {
   }
 
   function handleExportExcel() {
+    if (!can('reportes.exportar')) return
     const rows = getExportRows()
     if (rows.length === 0) {
       setMessage('No hay datos para exportar')
@@ -1058,6 +1084,7 @@ export default function Home() {
   }
 
   function handleExportPdf() {
+    if (!can('reportes.exportar')) return
     const rows = getExportRows()
     const title = REPORT_TITLES[selectedReportType]
     const generatedAt = new Date().toLocaleString('es-ES')
@@ -1117,6 +1144,7 @@ export default function Home() {
   }
 
   async function handleRestore(fileNameOverride?: string) {
+    if (!can('backups.gestionar')) return
     let targetBackup: string | undefined = fileNameOverride || selectedBackup || backups[0]
 
     if (!targetBackup) {
@@ -1140,8 +1168,28 @@ export default function Home() {
 
   const recovery = stats.facturas > 0 ? Math.round(((stats.facturas - stats.vencidas) / stats.facturas) * 100) : 0
   const pending = Math.max(0, stats.facturas - stats.vencidas)
-  const canManageUsers = authUser?.role === 'admin' || authUser?.role === 'supervisor'
-  const canManageBackups = authUser?.role === 'admin'
+  const can = (action: ActionKey) => canUseAction(actions, authUser?.role, action)
+  const canManageUsers = can('usuarios.gestionar')
+  const canManageBackups = can('backups.gestionar')
+  const allowedViews = VIEW_KEYS.filter((view) => canAccessView(permissions, authUser?.role, view))
+  const canManagePermissions = authUser?.role === 'admin'
+
+  function handleViewSelect(view: ViewKey) {
+    if (canAccessView(permissions, authUser?.role, view)) setActiveView(view)
+  }
+
+  function togglePermission(role: RoleKey, view: ViewKey) {
+    if (!canManagePermissions || (role === 'admin' && view === 'Configuración')) return
+    setPermissions((current) => ({
+      ...current,
+      [role]: { ...current[role], [view]: !current[role][view] },
+    }))
+  }
+
+  function toggleAction(role: RoleKey, action: ActionKey) {
+    if (!canManagePermissions || role === 'admin') return
+    setActions((current) => ({ ...current, [role]: { ...current[role], [action]: !current[role][action] } }))
+  }
   const currentReportRows: GenericRow[] = Array.isArray(reports[selectedReportType]?.rows) ? reports[selectedReportType].rows : []
   const chartData: ChartEntry[] = (() => {
     if (!currentReportRows.length) return []
@@ -1210,8 +1258,8 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mt-6 overflow-hidden rounded-[1.5rem] border border-white/10 bg-slate-900/80">
-              <table className="min-w-full border-separate border-spacing-0 text-left">
+            <div className="table-scroll mt-6 rounded-[1.5rem] border border-white/10 bg-slate-900/80">
+              <table className="min-w-[620px] border-separate border-spacing-0 text-left">
                 <thead className="bg-slate-950/80 text-slate-400">
                   <tr>
                     <th className="px-6 py-4 text-sm uppercase tracking-[0.24em]">Factura</th>
@@ -1456,14 +1504,7 @@ export default function Home() {
 
               <div>
                 <label className="mb-1 block text-xs uppercase tracking-[0.2em] text-slate-400">Reglas del contrato</label>
-                <textarea className="min-h-32 w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white" placeholder="1. ...\n2. ...\n3. ..." value={contractForm.reglas} onChange={(e) => setContractForm({ ...contractForm, reglas: formatContractRules(e.target.value) })} required />
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-xs text-slate-300">
-                <p><strong>Campo:</strong> descripción del valor</p>
-                <p><strong>Nombre:</strong> se escribe solo con letras.</p>
-                <p><strong>ID / identificación:</strong> formato 000-000000-0000X.</p>
-                <p><strong>Monto / cuotas / tasa:</strong> solo acepta números.</p>
+                <textarea rows={7} className="w-full resize-y rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white" placeholder="1. ...\n2. ...\n3. ..." value={contractForm.reglas} onChange={(e) => setContractForm({ ...contractForm, reglas: formatContractRules(e.target.value) })} required />
               </div>
 
               <div className="rounded-[1.5rem] border border-brand-500/30 bg-brand-500/5 p-4">
@@ -1491,7 +1532,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80">
+                <div className="table-scroll rounded-2xl border border-white/10 bg-slate-900/80">
                   <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
                     <thead className="bg-slate-950/80 text-slate-400">
                       <tr>
@@ -1520,7 +1561,7 @@ export default function Home() {
               </div>
 
               <div className="flex gap-3">
-                <button className="flex-1 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white" type="submit">Generar contrato PDF</button>
+                <button disabled={!can('prestamos.gestionar')} className="flex-1 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700" type="submit">Generar contrato PDF</button>
                 <button type="button" onClick={resetContractForm} className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-300">Limpiar</button>
               </div>
 
@@ -1539,7 +1580,7 @@ export default function Home() {
                     )}
                   </div>
                 </div>
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+                <div className="table-scroll rounded-2xl border border-white/10 bg-slate-950/60">
                   <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
                     <thead className="bg-slate-950/80 text-slate-400">
                       <tr>
@@ -1616,7 +1657,7 @@ export default function Home() {
                     {loanInstallments.length > 0 && (
                       <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">Cuotas Recalculadas</p>
-                        <div className="overflow-x-auto">
+                        <div className="table-scroll">
                           <table className="min-w-full text-left text-xs">
                             <thead className="border-b border-white/10">
                               <tr className="text-slate-400">
@@ -1644,7 +1685,7 @@ export default function Home() {
                     )}
 
                     <div className="flex gap-3">
-                      <button className="flex-1 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white" type="submit">Actualizar Préstamo</button>
+                      <button disabled={!can('prestamos.gestionar')} className="flex-1 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700" type="submit">Actualizar Préstamo</button>
                       <button type="button" onClick={resetLoanForm} className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-300">Cancelar</button>
                     </div>
                   </form>
@@ -1670,7 +1711,7 @@ export default function Home() {
     const pendingInvoices = filteredInvoices.filter((invoice) => Number(invoice.saldo_pendiente ?? invoice.monto) > 0)
 
     const renderInvoiceTable = (rows: InvoiceRow[], emptyMessage: string, pendingTable = false) => (
-      <div className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/60">
+      <div className="table-scroll rounded-2xl border border-white/10 bg-slate-950/60">
         <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
           <thead className="bg-slate-950/80 text-slate-400">
             <tr>
@@ -1746,7 +1787,7 @@ export default function Home() {
           <h2 className="text-2xl font-semibold text-white">Clientes</h2>
           <p className="mt-2 text-sm text-slate-400">Mantén el registro de clientes y su estado actual.</p>
 
-          <div className="mt-6 max-w-full overflow-x-auto rounded-[1.5rem] border border-white/10 bg-slate-900/80">
+          <div className="table-scroll mt-6 max-w-full rounded-[1.5rem] border border-white/10 bg-slate-900/80">
             <table className="min-w-[900px] border-separate border-spacing-0 text-left">
               <thead className="bg-slate-950/80 text-slate-400">
                 <tr>
@@ -1797,7 +1838,7 @@ export default function Home() {
               <option value="inactivo">Inactivo</option>
             </select>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <button className="flex-1 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white" type="submit">{editingClientId ? 'Actualizar cliente' : 'Guardar cliente'}</button>
+              <button disabled={!can('clientes.gestionar')} className="flex-1 rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700" type="submit">{editingClientId ? 'Actualizar cliente' : 'Guardar cliente'}</button>
               {editingClientId ? <button type="button" onClick={resetClientForm} className="rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-300">Cancelar</button> : null}
             </div>
           </form>
@@ -1960,7 +2001,7 @@ export default function Home() {
             </select>
             <input className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white" type="date" value={pagoForm.fecha_pago} onChange={(e) => setPagoForm({ ...pagoForm, fecha_pago: e.target.value })} required />
             <div className="flex gap-3">
-              <button className="flex-1 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white" type="submit">{editingPagoId ? 'Actualizar pago' : 'Registrar pago'}</button>
+              <button disabled={!can('pagos.gestionar')} className="flex-1 rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700" type="submit">{editingPagoId ? 'Actualizar pago' : 'Registrar pago'}</button>
               <button type="button" onClick={() => { resetPagoForm(); setSelectedPagoClienteId(''); setPagoClienteSearch(''); setMessage('Operación de pago cancelada') }} className="rounded-2xl border border-rose-400/40 px-4 py-3 text-sm text-rose-300 hover:bg-rose-500/10">
                 Cancelar pago
               </button>
@@ -1993,8 +2034,8 @@ export default function Home() {
                 <option value="pagos">Pagos</option>
                 <option value="riesgo">Riesgo</option>
               </select>
-              <button type="button" onClick={handleExportExcel} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold text-white">Exportar Excel</button>
-              <button type="button" onClick={handleExportPdf} className="rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white">Imprimir PDF</button>
+              <button type="button" onClick={handleExportExcel} disabled={!can('reportes.exportar')} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Exportar Excel</button>
+              <button type="button" onClick={handleExportPdf} disabled={!can('reportes.exportar')} className="rounded-2xl bg-brand-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-700">Imprimir PDF</button>
             </div>
           </div>
         </div>
@@ -2122,6 +2163,60 @@ export default function Home() {
             <h2 className="text-2xl font-semibold text-white">Configuración</h2>
             <p className="mt-2 text-sm text-slate-400">Administra respaldos, usuarios y preferencias del sistema.</p>
 
+            {canManagePermissions ? (
+              <div className="mt-6 rounded-[1.25rem] border border-white/10 bg-slate-900/80 p-4">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Permisos por rol</h3>
+                    <p className="mt-1 text-sm text-slate-400">Marca las vistas que cada rol puede abrir.</p>
+                  </div>
+                  <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-300">Solo administrador</span>
+                </div>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[620px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-slate-400">
+                        <th className="px-3 py-3 font-medium">Vista</th>
+                        {ROLE_OPTIONS.map((role) => <th key={role.value} className="px-3 py-3 text-center font-medium">{role.label}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {VIEW_KEYS.map((view) => (
+                        <tr key={view} className="border-b border-white/5 last:border-0">
+                          <td className="px-3 py-3 font-medium text-white">{view}</td>
+                          {ROLE_OPTIONS.map((role) => {
+                            const locked = role.value === 'admin' && view === 'Configuración'
+                            return (
+                              <td key={role.value} className="px-3 py-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={permissions[role.value as RoleKey][view]}
+                                  disabled={locked}
+                                  onChange={() => togglePermission(role.value as RoleKey, view)}
+                                  aria-label={`${view} para ${role.label}`}
+                                  className="h-4 w-4 accent-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-6 border-t border-white/10 pt-5">
+                  <h4 className="text-base font-semibold text-white">Funciones del sistema</h4>
+                  <p className="mt-1 text-sm text-slate-400">Controla qué operaciones puede ejecutar cada rol.</p>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full min-w-[620px] text-left text-sm">
+                      <thead><tr className="border-b border-white/10 text-slate-400"><th className="px-3 py-3 font-medium">Función</th>{ROLE_OPTIONS.map((role) => <th key={role.value} className="px-3 py-3 text-center font-medium">{role.label}</th>)}</tr></thead>
+                      <tbody>{ACTION_KEYS.map((action) => <tr key={action} className="border-b border-white/5 last:border-0"><td className="px-3 py-3 font-medium text-white">{action}</td>{ROLE_OPTIONS.map((role) => <td key={role.value} className="px-3 py-3 text-center"><input type="checkbox" checked={actions[role.value as RoleKey][action]} disabled={role.value === 'admin'} onChange={() => toggleAction(role.value as RoleKey, action)} aria-label={`${action} para ${role.label}`} className="h-4 w-4 accent-emerald-500 disabled:cursor-not-allowed disabled:opacity-50" /></td>)}</tr>)}</tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-6 rounded-[1.25rem] border border-white/10 bg-slate-900/80 p-4">
               <p className="text-sm font-semibold text-white">Tema de la interfaz</p>
               <p className="mt-1 text-sm text-slate-400">Elige una apariencia neutra para el sistema.</p>
@@ -2221,6 +2316,9 @@ export default function Home() {
   }
 
   function renderView() {
+    if (!canAccessView(permissions, authUser?.role, activeView)) {
+      return <div className="rounded-[2rem] border border-rose-400/20 bg-rose-500/10 p-6 text-sm text-rose-200">No tienes permiso para acceder a esta vista.</div>
+    }
     switch (activeView) {
       case 'Cobranza':
         return renderCobranzaView()
@@ -2263,7 +2361,6 @@ export default function Home() {
               <input className={`w-full rounded-2xl border px-4 py-3 text-sm ${themeMode === 'light' ? 'border-slate-300 bg-white text-black' : 'border-neutral-700 bg-black text-white'}`} type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} placeholder="Contraseña" required />
               <button className={`w-full rounded-2xl px-4 py-3 text-sm font-semibold transition ${themeMode === 'light' ? 'bg-black text-white hover:bg-neutral-800' : 'bg-neutral-600 text-white hover:bg-neutral-500'}`} style={{ color: '#ffffff' }} type="submit">Entrar</button>
             </form>
-            <p className={`mt-4 text-xs uppercase tracking-[0.24em] ${themeMode === 'light' ? 'text-slate-600' : 'text-neutral-400'}`}>Demo: admin@smartcollect.com / 123456</p>
           </section>
         </div>
       </main>
@@ -2271,22 +2368,22 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1700px] gap-6 xl:gap-8">
-        <aside className="hidden w-72 shrink-0 rounded-[2rem] border border-white/10 bg-slate-950/70 p-5 shadow-[0_20px_60px_-20px_rgba(15,23,42,0.8)] backdrop-blur-xl lg:block">
-          <Sidebar activeView={activeView} onSelect={setActiveView} />
+    <main className="min-h-screen px-3 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-8">
+      <div className="mx-auto flex max-w-[1700px] items-start gap-4 xl:gap-6">
+        <aside className="hidden w-64 shrink-0 lg:block xl:w-72">
+          <Sidebar activeView={activeView} onSelect={handleViewSelect} allowedViews={allowedViews} />
         </aside>
 
-        <section className="min-w-0 flex-1 space-y-6">
+        <section className="min-w-0 flex-1 space-y-4 sm:space-y-5">
           <Header onViewReports={() => setActiveView('Reportes')} onNewReport={handleCreateReport} />
-          <MobileNavigation activeView={activeView} onSelect={setActiveView} />
+          <MobileNavigation activeView={activeView} onSelect={handleViewSelect} allowedViews={allowedViews} />
 
-          <div className="flex items-center justify-between rounded-[2rem] border border-white/10 bg-slate-950/70 px-6 py-4 shadow-soft">
+          <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 shadow-soft sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <div>
-              <p className="text-sm uppercase tracking-[0.24em] text-slate-400">Panel operativo</p>
-              <h2 className="text-2xl font-semibold text-white">Gestión integral de cobranza</h2>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Panel operativo</p>
+              <h2 className="mt-1 text-xl font-semibold text-white sm:text-2xl">Gestión integral de cobranza</h2>
             </div>
-            <button onClick={handleLogout} className="rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm text-slate-200">Cerrar sesión</button>
+            <button onClick={handleLogout} className="self-start rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm text-slate-200 transition hover:bg-white/15 sm:self-auto">Cerrar sesión</button>
           </div>
 
           {message ? <div className="rounded-[1.5rem] border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">{message}</div> : null}

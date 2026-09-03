@@ -3,7 +3,7 @@ import { PDFDocument as PDFLibDocument, StandardFonts, rgb } from 'pdf-lib'
 import dayjs from 'dayjs'
 import { promises as fs } from 'fs'
 import path from 'path'
-import { query } from '@/lib/db'
+import { ensureLoanTables, query } from '@/lib/db'
 
 type Body = {
   cliente_id: number
@@ -107,6 +107,20 @@ function wrapText(text: string, maxChars: number) {
   return lines.length ? lines : ['']
 }
 
+function splitContractRules(text: string) {
+  const normalizedText = text.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim()
+  const rules = normalizedText
+    .split(/\s+(?=\d+\.\s+)/)
+    .map((rule) => rule.trim())
+    .filter(Boolean)
+  return rules.length > 0 ? rules : [normalizedText]
+}
+
+function formatRuleLines(rule: string, number: number, maxChars: number) {
+  const cleanRule = rule.replace(/^\d+\.\s*/, '')
+  return wrapText(`${number}. ${cleanRule}`, maxChars)
+}
+
 function padNumber(n: number, width = 4) {
   return String(n).padStart(width, '0')
 }
@@ -191,6 +205,7 @@ export async function POST(request: Request) {
     const reglas = body.reglas || '1. El cliente debe pagar en las fechas indicadas.\n2. El pago atrasado genera interés según la tasa acordada.\n3. El cliente acepta la firma del contratista y del cliente.\n4. El pago debe realizarse según la frecuencia acordada y la fecha establecida.\n5. Cualquier atraso generará interés sobre el saldo pendiente.\n6. La empresa podrá realizar seguimiento y recordatorios por medio telefónico o escrito.\n7. El cliente acepta la información y condiciones del préstamo de manera voluntaria.'
 
     await ensureContratosTable()
+    await ensureLoanTables()
 
     const count = await query<any[]>(`
       SELECT COALESCE(MAX((substring(numero_contrato from 7))::int), 0) + 1 AS siguiente
@@ -239,7 +254,7 @@ export async function POST(request: Request) {
     const { totalInterest, totalPayable, installmentAmount: installment, schedule } = plan
 
     const pdfDoc = await PDFLibDocument.create()
-    const page = pdfDoc.addPage([595, 842])
+    let page = pdfDoc.addPage([595, 842])
     const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
     const fontSizeTitle = 16
     const fontSizeNormal = 10
@@ -257,9 +272,8 @@ export async function POST(request: Request) {
     const companyDescriptionLines = wrapText(EMPRESA_DESCRIPCION, 95)
     companyDescriptionLines.forEach((line) => {
       if (y < 80) {
-        const newPage = pdfDoc.addPage([595, 842])
+        page = pdfDoc.addPage([595, 842])
         y = 820
-        page.drawText('', { x: 0, y: 0 })
       }
       page.drawText(line, { x: 50, y, size: fontSizeNormal, font: helveticaFont })
       y -= 12
@@ -283,18 +297,17 @@ export async function POST(request: Request) {
 
     page.drawText('Reglas del contrato:', { x: 50, y, size: fontSizeNormal, font: helveticaFont })
     y -= 15
-    const ruleLines = wrapText(
-      `${reglas}`,
-      95
-    )
-    ruleLines.forEach((line) => {
-      if (y < 80) {
-        const newPage = pdfDoc.addPage([595, 842])
-        y = 820
-        page.drawText('', { x: 0, y: 0 })
-      }
-      page.drawText(line, { x: 50, y, size: fontSizeNormal, font: helveticaFont })
-      y -= 15
+    const contractRules = splitContractRules(reglas)
+    contractRules.forEach((rule, index) => {
+      const ruleLines = formatRuleLines(rule, index + 1, 95)
+      ruleLines.forEach((line, lineIndex) => {
+        if (y < 80) {
+          page = pdfDoc.addPage([595, 842])
+          y = 820
+        }
+        page.drawText(lineIndex === 0 ? line : `   ${line}`, { x: 50, y, size: fontSizeNormal, font: helveticaFont })
+        y -= 15
+      })
     })
 
     y -= 10
@@ -309,9 +322,8 @@ export async function POST(request: Request) {
 
     schedule.forEach((row) => {
       if (y < 80) {
-        const newPage = pdfDoc.addPage([595, 842])
+        page = pdfDoc.addPage([595, 842])
         y = 820
-        page.drawText('', { x: 0, y: 0 })
       }
       page.drawText(String(row.num), { x: 50, y, size: fontSizeNormal, font: helveticaFont })
       page.drawText(row.fecha, { x: 90, y, size: fontSizeNormal, font: helveticaFont })
@@ -332,22 +344,17 @@ export async function POST(request: Request) {
 
     const pdfBytes = await pdfDoc.save()
     const pdfBuffer = Buffer.from(pdfBytes)
+    const pdfBody = new ArrayBuffer(pdfBuffer.byteLength)
+    new Uint8Array(pdfBody).set(pdfBuffer)
     const contratosDir = path.join(process.cwd(), 'contratos')
     await fs.mkdir(contratosDir, { recursive: true })
     const contratoDate = dayjs().format('YYYY-MM-DD')
     const clienteFileName = sanitizeFileName(String(cliente.nombre))
     const fileName = `${clienteFileName}_${contratoDate}_${contratoNumber}.pdf`
     const filePath = path.join(contratosDir, fileName)
-    await fs.writeFile(filePath, pdfBuffer)
+    await fs.writeFile(filePath, new Uint8Array(pdfBody))
 
-    return new Response(pdfBuffer, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${fileName}"`,
-        'X-Contrato-Archivo': fileName,
-      },
-    })
+    return NextResponse.json({ ok: true, archivo: fileName })
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }

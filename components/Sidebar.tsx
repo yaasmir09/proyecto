@@ -1,4 +1,4 @@
-type ViewKey = 'Dashboard' | 'Cobranza' | 'Facturas' | 'Clientes' | 'Pagos' | 'Reportes' | 'Configuración'
+import type { ViewKey } from '@/lib/permissions'
 
 export const navigation: Array<{ title: ViewKey; label?: string; icon: string }> = [
   { title: 'Dashboard', icon: '◉' },
@@ -13,13 +13,14 @@ export const navigation: Array<{ title: ViewKey; label?: string; icon: string }>
 type SidebarProps = {
   activeView: ViewKey
   onSelect: (view: ViewKey) => void
+  allowedViews: ViewKey[]
 }
 
-export function MobileNavigation({ activeView, onSelect }: SidebarProps) {
+export function MobileNavigation({ activeView, onSelect, allowedViews }: SidebarProps) {
   return (
     <nav className="overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/70 p-2 shadow-soft lg:hidden">
       <div className="flex min-w-max gap-2">
-        {navigation.map((item) => (
+        {navigation.filter((item) => allowedViews.includes(item.title)).map((item) => (
           <button
             key={item.title}
             type="button"
@@ -37,10 +38,10 @@ export function MobileNavigation({ activeView, onSelect }: SidebarProps) {
   )
 }
 
-export default function Sidebar({ activeView, onSelect }: SidebarProps) {
+export default function Sidebar({ activeView, onSelect, allowedViews }: SidebarProps) {
   return (
-    <div className="space-y-6">
-      <div className="rounded-[1.5rem] bg-slate-900/80 p-5">
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.32em] text-slate-500">Préstamos</p>
@@ -57,10 +58,10 @@ export default function Sidebar({ activeView, onSelect }: SidebarProps) {
         </div>
       </div>
 
-      <nav className="rounded-[1.5rem] border border-white/10 bg-slate-950/70 p-4 shadow-soft">
+      <nav className="rounded-2xl border border-white/10 bg-slate-950/70 p-3 shadow-soft">
         <p className="mb-4 px-3 text-[11px] uppercase tracking-[0.32em] text-slate-500">Menú</p>
-        <ul className="space-y-2">
-          {navigation.map((item) => (
+          <ul className="space-y-1">
+          {navigation.filter((item) => allowedViews.includes(item.title)).map((item) => (
             <li key={item.title}>
               <button
                 onClick={() => onSelect(item.title)}
@@ -77,7 +78,7 @@ export default function Sidebar({ activeView, onSelect }: SidebarProps) {
         </ul>
       </nav>
 
-      <div className="rounded-[1.5rem] border border-white/10 bg-gradient-to-br from-brand-500/10 to-cyan-500/10 p-5 shadow-soft">
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-brand-500/10 to-cyan-500/10 p-4 shadow-soft">
         <p className="text-sm font-semibold text-white">Recomendación</p>
         <p className="mt-3 text-sm leading-6 text-slate-300">
           Revisa los contratos con mayor riesgo y prioriza la comunicación para evitar retrasos de pago.

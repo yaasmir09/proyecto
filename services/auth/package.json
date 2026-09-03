@@ -1,0 +1,8 @@
+{
+  "name": "gestion-cobranza-auth-service",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.11.1"
+  }
+}

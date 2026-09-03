@@ -1,0 +1,8 @@
+{
+  "name": "gestion-cobranza-backup-service",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.11.1"
+  }
+}

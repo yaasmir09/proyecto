@@ -11,11 +11,52 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://root:123qwe@db:5432/cobranza_db
+      REPORTS_SERVICE_URL: http://reports:4002
+      AUTH_SERVICE_URL: http://auth:4001
+      BACKUP_SERVICE_URL: http://backup:4003
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: root
       DB_PASSWORD: 123qwe
       DB_NAME: cobranza_db
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  auth:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://root:123qwe@db:5432/cobranza_db
+      PORT: 4001
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  reports:
+    build:
+      context: ./services/reports
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://root:123qwe@db:5432/cobranza_db
+      PORT: 4002
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backup:
+    build:
+      context: ./services/backup
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://root:123qwe@db:5432/cobranza_db
+      PORT: 4003
+    volumes:
+      - ./backups:/data/backups
     depends_on:
       db:
         condition: service_healthy

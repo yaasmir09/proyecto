@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
+import { proxyService, readJson } from '@/lib/service-client'
 
 async function ensureUsersTable() {
   await query(`
@@ -20,6 +21,9 @@ async function ensureUsersTable() {
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return proxyService(request, process.env.AUTH_SERVICE_URL || 'http://auth:4001', `/users/${id}`, 'PATCH', await readJson(request))
+  /*
   try {
     await ensureUsersTable()
     const { id } = await params
@@ -46,9 +50,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }
 
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return proxyService(request, process.env.AUTH_SERVICE_URL || 'http://auth:4001', `/users/${id}`, 'DELETE')
+  /*
   try {
     await ensureUsersTable()
     const { id } = await params
@@ -57,4 +65,5 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }

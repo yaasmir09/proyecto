@@ -2,6 +2,7 @@ import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { NextResponse } from 'next/server'
+import { proxyService } from '@/lib/service-client'
 
 async function resolvePostgresCliPath(binaryName: 'pg_dump' | 'psql') {
   const configured = binaryName === 'pg_dump' ? process.env.PGDUMP_PATH : process.env.PSQL_PATH
@@ -42,6 +43,8 @@ async function isPostgresBackup(filePath: string) {
 }
 
 export async function GET() {
+  return proxyService(new Request('http://internal/backups'), process.env.BACKUP_SERVICE_URL || 'http://backup:4003', '/backups')
+  /*
   try {
     const backupDir = path.join(process.cwd(), 'backups')
     await fs.mkdir(backupDir, { recursive: true })
@@ -59,9 +62,12 @@ export async function GET() {
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  return proxyService(request, process.env.BACKUP_SERVICE_URL || 'http://backup:4003', '/backups', 'POST')
+  /*
   try {
     const backupDir = path.join(process.cwd(), 'backups')
     await fs.mkdir(backupDir, { recursive: true })
@@ -118,4 +124,5 @@ export async function POST() {
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }

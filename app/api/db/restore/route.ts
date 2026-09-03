@@ -3,6 +3,7 @@ import { once } from 'events'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { NextResponse } from 'next/server'
+import { proxyService, readJson } from '@/lib/service-client'
 
 async function resolvePostgresCliPath(binaryName: 'pg_dump' | 'psql') {
   const configured = binaryName === 'pg_dump' ? process.env.PGDUMP_PATH : process.env.PSQL_PATH
@@ -34,6 +35,9 @@ async function resolvePostgresCliPath(binaryName: 'pg_dump' | 'psql') {
 }
 
 export async function POST(request: Request) {
+  const body = await readJson(request)
+  return proxyService(request, process.env.BACKUP_SERVICE_URL || 'http://backup:4003', '/backups/restore', 'POST', body)
+  /*
   try {
     const body = await request.json()
     const fileName = body?.fileName
@@ -114,4 +118,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }

@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
+import { proxyService, readJson } from '@/lib/service-client'
 
 function md5(value: string) {
   return crypto.createHash('md5').update(value).digest('hex')
@@ -33,6 +34,12 @@ async function ensureUsersTable() {
 }
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const email = searchParams.get('email')
+  const password = searchParams.get('password')
+  if (email && password) return proxyService(request, process.env.AUTH_SERVICE_URL || 'http://auth:4001', '/login', 'POST', { email, password })
+  return proxyService(request, process.env.AUTH_SERVICE_URL || 'http://auth:4001', '/users')
+  /*
   try {
     await ensureUsersTable()
 
@@ -53,9 +60,14 @@ export async function GET(request: Request) {
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }
 
 export async function POST(request: Request) {
+  const body = await readJson(request)
+  const target = body?.action === 'login' ? '/login' : '/users'
+  return proxyService(request, process.env.AUTH_SERVICE_URL || 'http://auth:4001', target, 'POST', body)
+  /*
   try {
     await ensureUsersTable()
 
@@ -93,4 +105,5 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ ok: false, error: (error as Error).message }, { status: 500 })
   }
+  */
 }

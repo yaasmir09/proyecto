@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import db from '@/lib/db'
+import db, { ensureLoanTables } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url)
     const clienteId = url.searchParams.get('cliente_id')
 
+    await ensureLoanTables()
     await db.query(`
       UPDATE prestamos p
       SET saldo_pendiente = 0,
@@ -62,6 +63,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureLoanTables()
     const body = await req.json()
     const {
       cliente_id,
